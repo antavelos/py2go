@@ -5,16 +5,18 @@ from typing import Protocol
 
 
 class GoType(enum.Enum):
+    STRING = 'string'
     INT = 'int'
     FLOAT = 'float'
     SLICE = 'slice'
     MAP = 'map'
     BOOL = 'bool'
-    INTERFACE = 'interface'
+    ANY = 'any'
     NIL = 'nil'
 
 
 PY2GO_TYPES = {
+    str: GoType.STRING,
     int: GoType.INT,
     float: GoType.FLOAT,
     bool: GoType.BOOL,
@@ -26,41 +28,48 @@ PY2GO_TYPES = {
 
 
 class Node(Protocol):
-    def to_go(self): ...
+    def to_go(self) -> str: ...
 
 
-@dataclass
-class PyValue:
-    value: any
+def _infer_list_type(lst: list[any]) -> GoType:
+    type_set = {type(item) for item in lst}
 
-    @staticmethod
-    def _infer_list_type(lst: list[any]) -> GoType:
-        type_set = {type(item) for item in lst}
+    if len(type_set) == 1:
+        return PY2GO_TYPES.get(type_set.pop())
 
-        if len(type_set) == 1:
-            return PY2GO_TYPES.get(type_set.pop())
+    return GoType.ANY
 
-        return GoType.INTERFACE
 
-    def to_go(self):
+def py_value_to_go(value: any) -> str:
+    match value:
+        case bool():
+            return 'true' if value else 'false'
+        case str():
+            return f'"{value}"'
+        case list() | tuple():
+            list_type = _infer_list_type(value)
+            value_str = ", ".join([py_value_to_go(item) for item in value])
 
-        match self.value:
-            case bool():
-                return 'true' if self.value else 'false'
-            case str():
-                return f'"{self.value}"'
-            case list() | tuple():
-                list_type = self._infer_list_type(self.value)
-                list_str = ",".join([PyValue(item).to_go() for item in self.value])
-                return f"[]{list_type.value}{{{list_str}}}"
+            return f"[]{list_type.value}{{{value_str}}}"
+        case dict():
+            key_type = _infer_list_type(list(value.keys()))
+            value_type = _infer_list_type(list(value.values()))
 
-        return f"{self.value}"
+            def dict_pair_str(key: any, value: any) -> str:
+                return f'{py_value_to_go(key)}: {py_value_to_go(value)}'
+
+            def value_str(value: dict) -> str:
+                return f'{{{", ".join([dict_pair_str(key, val) for key, val in value.items()])}}}'
+
+            return f"map[{key_type.value}]{value_type.value}{value_str(value)}"
+
+    return f"{value}"
 
 
 @dataclass
 class PyVariable:
     name: str
-    value: PyValue
+    value: any
 
 
 class AssignNode(Node):
@@ -75,11 +84,16 @@ class AssignNode(Node):
 
             return elt.value
 
-        def py_value_from_assign(assign: ast.Assign) -> PyValue:
+        def py_value_from_assign(assign: ast.Assign) -> any:
             if isinstance(assign.value, (ast.List, ast.Tuple)):
-                return PyValue([get_elt_value(elt) for elt in assign.value.elts])
+                return [get_elt_value(elt) for elt in assign.value.elts]
 
-            return PyValue(assign.value.value)
+            if isinstance(assign.value, ast.Dict):
+                keys = [key.value for key in assign.value.keys]
+                values = [value.value for value in assign.value.values]
+                return {key: value for key, value in zip(keys, values)}
+
+            return assign.value.value
 
         variables = [
             PyVariable(name=target.id, value=py_value_from_assign(assign))
@@ -89,8 +103,8 @@ class AssignNode(Node):
 
     @classmethod
     def from_ann_assign(cls, assign: ast.AnnAssign):
-        var = PyVariable(name=assign.target.id, value=PyValue(assign.value.value))
+        var = PyVariable(name=assign.target.id, value=assign.value.value)
         return cls([var])
 
-    def to_go(self):
-        return "\n".join(f"{var.name} := {var.value.to_go()}" for var in self.variables)
+    def to_go(self) -> str:
+        return "\n".join(f"{var.name} := {py_value_to_go(var.value)}" for var in self.variables)
