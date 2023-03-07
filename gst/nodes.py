@@ -66,6 +66,25 @@ def py_value_to_go(value: any) -> str:
     return f"{value}"
 
 
+def get_elt_value(elt: ast.Constant | ast.List | ast.Tuple) -> any:
+    if hasattr(elt, 'elts'):
+        return [get_elt_value(e) for e in getattr(elt, 'elts')]
+
+    return elt.value
+
+
+def py_value_from_assign_value(assign_value) -> any:
+    if isinstance(assign_value, (ast.List, ast.Tuple)):
+        return [get_elt_value(elt) for elt in assign_value.elts]
+
+    if isinstance(assign_value, ast.Dict):
+        keys = [key.value for key in assign_value.keys]
+        values = [py_value_from_assign_value(value) for value in assign_value.values]
+        return {key: value for key, value in zip(keys, values)}
+
+    return assign_value.value
+
+
 @dataclass
 class PyVariable:
     name: str
@@ -78,32 +97,20 @@ class AssignNode(Node):
 
     @classmethod
     def from_assign(cls, assign: ast.Assign):
-        def get_elt_value(elt: ast.Constant | ast.List | ast.Tuple) -> any:
-            if hasattr(elt, 'elts'):
-                return [get_elt_value(e) for e in getattr(elt, 'elts')]
-
-            return elt.value
-
-        def py_value_from_assign(assign: ast.Assign) -> any:
-            if isinstance(assign.value, (ast.List, ast.Tuple)):
-                return [get_elt_value(elt) for elt in assign.value.elts]
-
-            if isinstance(assign.value, ast.Dict):
-                keys = [key.value for key in assign.value.keys]
-                values = [value.value for value in assign.value.values]
-                return {key: value for key, value in zip(keys, values)}
-
-            return assign.value.value
-
         variables = [
-            PyVariable(name=target.id, value=py_value_from_assign(assign))
+            PyVariable(name=target.id, value=py_value_from_assign_value(assign.value))
             for target in assign.targets
         ]
         return cls(variables)
 
     @classmethod
     def from_ann_assign(cls, assign: ast.AnnAssign):
-        var = PyVariable(name=assign.target.id, value=assign.value.value)
+        # variables = [
+        #     PyVariable(name=target.id, value=py_value_from_assign_value(assign.value))
+        #     for target in assign.targets
+        # ]
+        # return cls(variables)
+        var = PyVariable(name=assign.target.id, value=py_value_from_assign_value(assign.value))
         return cls([var])
 
     def to_go(self) -> str:

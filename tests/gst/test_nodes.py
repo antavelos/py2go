@@ -35,8 +35,34 @@ def test_value(py_value, expected_go_value):
     ('test = {"key1": 1, "key2": 2}', 'test := map[string]int{"key1": 1, "key2": 2}'),
     ('test = {"key1": 1, "key2": "2"}', 'test := map[string]any{"key1": 1, "key2": "2"}'),
     ('test = {1: 1, "key2": "2"}', 'test := map[any]any{1: 1, "key2": "2"}'),
+    ('test = {1: 1, "key2": ["2"]}', 'test := map[any]any{1: 1, "key2": []string{"2"}}'),
+    ('test = {1: 1, "key2": ["2", 1]}', 'test := map[any]any{1: 1, "key2": []any{"2", 1}}'),
 ])
 def test_assign_node(python_assign, expected_go_assignment):
     tree = ast.parse(python_assign)
     node = AssignNode.from_assign(assign=tree.body[0])
     assert node.to_go() == expected_go_assignment
+
+
+@pytest.mark.parametrize('python_assign, expected_go_assignment', [
+    ('test: bool = True', 'test := true'),
+    ('test: bool = False', 'test := false'),
+    ('test: int = "test"', 'test := "test"'),
+    ('test: int = 1', 'test := 1'),
+    ('test: float = 1.1', 'test := 1.1'),
+    ('test: list = [1, 2, 3]', 'test := []int{1, 2, 3}'),
+    ('test: tuple = (1, 2, 3)', 'test := []int{1, 2, 3}'),
+    ('test: list = [1, 2, "3"]', 'test := []any{1, 2, "3"}'),
+    ('test: list = (1, 2, "3")', 'test := []any{1, 2, "3"}'),
+    ('test: list = [1, 2, [3, 4]]', 'test := []any{1, 2, []int{3, 4}}'),
+    ('test: dict = {"key1": 1, "key2": 2}', 'test := map[string]int{"key1": 1, "key2": 2}'),
+    ('test: dict = {"key1": 1, "key2": "2"}', 'test := map[string]any{"key1": 1, "key2": "2"}'),
+    ('test: dict = {1: 1, "key2": "2"}', 'test := map[any]any{1: 1, "key2": "2"}'),
+    ('test: dict = {1: 1, "key2": ["2"]}', 'test := map[any]any{1: 1, "key2": []string{"2"}}'),
+    ('test: dict = {1: 1, "key2": ["2", 1]}', 'test := map[any]any{1: 1, "key2": []any{"2", 1}}'),
+])
+def test_ann_assign_node(python_assign, expected_go_assignment):
+    tree = ast.parse(python_assign)
+    node = AssignNode.from_ann_assign(assign=tree.body[0])
+    assert node.to_go() == expected_go_assignment
+
