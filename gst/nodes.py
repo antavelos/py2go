@@ -91,12 +91,12 @@ class PyVariable:
     value: any
 
 
-class AssignNode(Node):
-    def __init__(self, variables: list[PyVariable]):
-        self.variables = variables
+class AssignNode:
+    def __init__(self, py_variables: list[PyVariable]):
+        self.py_variables = py_variables
 
     @classmethod
-    def from_assign(cls, assign: ast.Assign):
+    def from_ast_assign(cls, assign: ast.Assign):
         variables = [
             PyVariable(name=target.id, value=py_value_from_assign_value(assign.value))
             for target in assign.targets
@@ -104,14 +104,137 @@ class AssignNode(Node):
         return cls(variables)
 
     @classmethod
-    def from_ann_assign(cls, assign: ast.AnnAssign):
-        # variables = [
-        #     PyVariable(name=target.id, value=py_value_from_assign_value(assign.value))
-        #     for target in assign.targets
-        # ]
-        # return cls(variables)
+    def from_ast_ann_assign(cls, assign: ast.AnnAssign):
         var = PyVariable(name=assign.target.id, value=py_value_from_assign_value(assign.value))
         return cls([var])
 
     def to_go(self) -> str:
-        return "\n".join(f"{var.name} := {py_value_to_go(var.value)}" for var in self.variables)
+        return "\n".join(f"{var.name} := {py_value_to_go(var.value)}" for var in self.py_variables)
+
+
+class CompareOp(enum.Enum):
+    EQ = 'eq'
+    NE = 'ne'
+    GT = 'gt'
+    GE = 'ge'
+    LT = 'lt'
+    LE = 'le'
+
+
+class GoBoolOp(enum.Enum):
+    AND = '&&'
+    OR = '||'
+
+
+@dataclass
+class Compare:
+    left: any
+    right: any
+    op: CompareOp
+
+
+class BoolCondition:
+    left: any
+    right: any
+
+
+class IfNode:
+    def __init__(self, comparisons: list[Compare], body: list[Node]):
+        self.comparisons = comparisons
+        self.body = body
+
+    def to_go(self) -> str:
+        return f"""if """
+
+
+def go_compare_op_from_ast_compare_op(op: ast.Gt | ast.GtE | ast.Eq | ast.NotEq | ast.Lt | ast.LtE) -> str:
+    mapper = {
+        ast.Gt: ">",
+        ast.GtE: ">=",
+        ast.Lt: "<",
+        ast.LtE: "<=",
+        ast.Eq: "==",
+        ast.NotEq: "!="
+    }
+    return mapper.get(type(op))
+
+
+def py_value_from_ast_name_or_constant(var: ast.Name | ast.Constant) -> any:
+    if isinstance(var, ast.Name):
+        return var.id
+
+    if isinstance(var, ast.Constant):
+        return py_value_from_assign_value(var)
+
+
+def ast_compare_to_go(compare: ast.Compare) -> str:
+    left = py_value_from_ast_name_or_constant(compare.left)
+    right = py_value_from_ast_name_or_constant(compare.comparators[0])
+    op = go_compare_op_from_ast_compare_op(compare.ops[0])
+
+    return f"{left} {op} {right}"
+
+
+def ast_unary_op_to_go(unary: ast.UnaryOp) -> str:
+    mapper = {
+        ast.Not: "!",
+        ast.UAdd: "+",
+        ast.USub: "-"
+    }
+    op = mapper.get(type(unary.op))
+    operand = py_value_from_ast_name_or_constant(unary.operand)
+
+    return f"{op}{operand}"
+
+
+def ast_name_to_go(name: ast.Name) -> str:
+    return name.id
+
+
+def ast_constant_to_go(const: ast.Constant) -> str:
+    return const.value
+
+
+def ast_bool_op_to_go(bool_op: ast.BoolOp) -> str:
+    operator_mapper = {
+        ast.Or: "||",
+        ast.And: "&&"
+    }
+
+    operand_mapper = {
+        ast.Name: ast_name_to_go,
+        ast.Constant: ast_constant_to_go,
+        ast.UnaryOp: ast_unary_op_to_go,
+        ast.Compare: ast_compare_to_go,
+        ast.BoolOp: ast_bool_op_to_go
+    }
+
+    left = operand_mapper.get(type(bool_op.values[0]))(bool_op.values[0])
+    right = operand_mapper.get(type(bool_op.values[1]))(bool_op.values[1])
+    operator = operator_mapper.get(type(bool_op.op))
+
+    return f"({left} {operator} {right})"
+
+
+def trim_brackets(expr: str) -> str:
+    length = len(expr)
+    brackets_to_remove = 0
+
+    for i in range(int(length / 2)):
+        if expr[i] != "(" or expr[length - 1 - i] != ")":
+            break
+
+        brackets_to_remove += 1
+
+    return expr[brackets_to_remove:length - brackets_to_remove]
+
+
+def ast_if_to_go(if_cond: ast.If):
+    condition_mapper = {
+        ast.Compare: ast_compare_to_go,
+        ast.BoolOp: ast_bool_op_to_go
+    }
+
+    condition = condition_mapper[type(if_cond.test)](if_cond.test)
+
+    return f"if ({trim_brackets(condition)}) {{}}"

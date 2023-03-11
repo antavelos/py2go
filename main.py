@@ -20,9 +20,9 @@ if __name__ == '__main__':
 
     for item in tree.body:
         if isinstance(item, ast.Assign):
-            node = AssignNode.from_assign(item)
+            node = AssignNode.from_ast_assign(item)
             node.to_go()
 
         if isinstance(item, ast.AnnAssign):
-            node = AssignNode.from_ann_assign(item)
+            node = AssignNode.from_ast_ann_assign(item)
             node.to_go()
