@@ -1,7 +1,8 @@
 import ast
 import enum
-from dataclasses import dataclass
 from typing import Protocol
+
+from gst.utils import trim_brackets
 
 
 class GoType(enum.Enum):
@@ -66,88 +67,43 @@ def py_value_to_go(value: any) -> str:
     return f"{value}"
 
 
-def get_elt_value(elt: ast.Constant | ast.List | ast.Tuple) -> any:
+def get_elt_value(elt: ast.List | ast.Tuple) -> any:
     if hasattr(elt, 'elts'):
         return [get_elt_value(e) for e in getattr(elt, 'elts')]
 
     return elt.value
 
 
-def py_value_from_assign_value(assign_value) -> any:
+def assign_value_to_py(assign_value) -> any:
     if isinstance(assign_value, (ast.List, ast.Tuple)):
         return [get_elt_value(elt) for elt in assign_value.elts]
 
     if isinstance(assign_value, ast.Dict):
         keys = [key.value for key in assign_value.keys]
-        values = [py_value_from_assign_value(value) for value in assign_value.values]
+        values = [assign_value_to_py(value) for value in assign_value.values]
         return {key: value for key, value in zip(keys, values)}
 
     return assign_value.value
 
 
-@dataclass
-class PyVariable:
-    name: str
-    value: any
+def ast_assign_to_go(assign: ast.Assign) -> str:
+    return "\n".join([
+        f"{target.id} := {assign_value_to_go(assign.value)}"
+        for target in assign.targets
+    ])
 
 
-class AssignNode:
-    def __init__(self, py_variables: list[PyVariable]):
-        self.py_variables = py_variables
-
-    @classmethod
-    def from_ast_assign(cls, assign: ast.Assign):
-        variables = [
-            PyVariable(name=target.id, value=py_value_from_assign_value(assign.value))
-            for target in assign.targets
-        ]
-        return cls(variables)
-
-    @classmethod
-    def from_ast_ann_assign(cls, assign: ast.AnnAssign):
-        var = PyVariable(name=assign.target.id, value=py_value_from_assign_value(assign.value))
-        return cls([var])
-
-    def to_go(self) -> str:
-        return "\n".join(f"{var.name} := {py_value_to_go(var.value)}" for var in self.py_variables)
+def ast_ann_assign_to_go(assign: ast.AnnAssign) -> str:
+    return f"{assign.target.id} := {assign_value_to_go(assign.value)}"
 
 
-class CompareOp(enum.Enum):
-    EQ = 'eq'
-    NE = 'ne'
-    GT = 'gt'
-    GE = 'ge'
-    LT = 'lt'
-    LE = 'le'
+def assign_value_to_go(value: any) -> str:
+    py_value = assign_value_to_py(value)
+
+    return py_value_to_go(py_value)
 
 
-class GoBoolOp(enum.Enum):
-    AND = '&&'
-    OR = '||'
-
-
-@dataclass
-class Compare:
-    left: any
-    right: any
-    op: CompareOp
-
-
-class BoolCondition:
-    left: any
-    right: any
-
-
-class IfNode:
-    def __init__(self, comparisons: list[Compare], body: list[Node]):
-        self.comparisons = comparisons
-        self.body = body
-
-    def to_go(self) -> str:
-        return f"""if """
-
-
-def go_compare_op_from_ast_compare_op(op: ast.Gt | ast.GtE | ast.Eq | ast.NotEq | ast.Lt | ast.LtE) -> str:
+def operator_from_ast_compare_op(op: ast.Gt | ast.GtE | ast.Eq | ast.NotEq | ast.Lt | ast.LtE) -> str:
     mapper = {
         ast.Gt: ">",
         ast.GtE: ">=",
@@ -164,13 +120,13 @@ def py_value_from_ast_name_or_constant(var: ast.Name | ast.Constant) -> any:
         return var.id
 
     if isinstance(var, ast.Constant):
-        return py_value_from_assign_value(var)
+        return assign_value_to_py(var)
 
 
 def ast_compare_to_go(compare: ast.Compare) -> str:
     left = py_value_from_ast_name_or_constant(compare.left)
     right = py_value_from_ast_name_or_constant(compare.comparators[0])
-    op = go_compare_op_from_ast_compare_op(compare.ops[0])
+    op = operator_from_ast_compare_op(compare.ops[0])
 
     return f"{left} {op} {right}"
 
@@ -214,19 +170,6 @@ def ast_bool_op_to_go(bool_op: ast.BoolOp) -> str:
     operator = operator_mapper.get(type(bool_op.op))
 
     return f"({left} {operator} {right})"
-
-
-def trim_brackets(expr: str) -> str:
-    length = len(expr)
-    brackets_to_remove = 0
-
-    for i in range(int(length / 2)):
-        if expr[i] != "(" or expr[length - 1 - i] != ")":
-            break
-
-        brackets_to_remove += 1
-
-    return expr[brackets_to_remove:length - brackets_to_remove]
 
 
 def ast_if_to_go(if_cond: ast.If):

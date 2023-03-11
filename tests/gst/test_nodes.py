@@ -2,7 +2,7 @@ import ast
 
 import pytest
 
-from gst.nodes import AssignNode, py_value_to_go, ast_bool_op_to_go, trim_brackets, ast_if_to_go
+from gst.nodes import py_value_to_go, ast_bool_op_to_go, ast_if_to_go, ast_assign_to_go, ast_ann_assign_to_go
 
 
 @pytest.mark.parametrize('py_value, expected_go_value', [
@@ -40,8 +40,7 @@ def test_value(py_value, expected_go_value):
 ])
 def test_assign_node(python_assign, expected_go_assignment):
     tree = ast.parse(python_assign)
-    node = AssignNode.from_ast_assign(assign=tree.body[0])
-    assert node.to_go() == expected_go_assignment
+    assert ast_assign_to_go(assign=tree.body[0]) == expected_go_assignment
 
 
 @pytest.mark.parametrize('python_assign, expected_go_assignment', [
@@ -63,8 +62,7 @@ def test_assign_node(python_assign, expected_go_assignment):
 ])
 def test_ann_assign_node(python_assign, expected_go_assignment):
     tree = ast.parse(python_assign)
-    node = AssignNode.from_ast_ann_assign(assign=tree.body[0])
-    assert node.to_go() == expected_go_assignment
+    assert ast_ann_assign_to_go(assign=tree.body[0]) == expected_go_assignment
 
 
 @pytest.mark.parametrize('py_expression, expected_go_expression', [
@@ -78,15 +76,6 @@ def test_ast_bool_op_to_go(py_expression, expected_go_expression):
     tree = ast.parse(py_expression)
     bool_op = tree.body[0].value
     assert ast_bool_op_to_go(bool_op) == expected_go_expression
-
-
-@pytest.mark.parametrize('expr, expected_expt', [
-    ("(a && b)", "a && b"),
-    ("((a && b))", "a && b"),
-    ("(((a) && b))", "(a) && b"),
-])
-def test_trim_brackets(expr, expected_expt):
-    assert trim_brackets(expr) == expected_expt
 
 
 @pytest.mark.parametrize('py_if_cond, expected_go_if_cond', [
