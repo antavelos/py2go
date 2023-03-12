@@ -89,6 +89,11 @@ if a > b and b > 0:
     pass
     """,
      "if (a > b && b > 0) {}"),
+    ("""
+if (not a or a < 0) or (a > b or a < 0) and (a > b or a < 0):
+    pass
+    """,
+     "if ((!a || a < 0) || ((a > b || a < 0) && (a > b || a < 0))) {}"),
 
 ])
 def test_ast_if_to_go(py_if_cond, expected_go_if_cond):

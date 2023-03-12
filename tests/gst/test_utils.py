@@ -7,6 +7,7 @@ from gst.utils import trim_brackets
     ("(a && b)", "a && b"),
     ("((a && b))", "a && b"),
     ("(((a) && b))", "(a) && b"),
+    ("((!a || a < 0) || ((a > b || a < 0) && (a > b || a < 0)))", "(!a || a < 0) || ((a > b || a < 0) && (a > b || a < 0))")
 ])
 def test_trim_brackets(expr, expected_expt):
     assert trim_brackets(expr) == expected_expt
