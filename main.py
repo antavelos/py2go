@@ -1,7 +1,7 @@
 
 import ast
 
-from gst.nodes import AssignNode
+from gst.nodes import ast_if_to_go
 
 
 def read_code():
@@ -17,12 +17,5 @@ if __name__ == '__main__':
     code = read_code()
     tree = ast.parse(code)
     # print_tree(tree)
+    print(ast_if_to_go(tree.body[2]))
 
-    for item in tree.body:
-        if isinstance(item, ast.Assign):
-            node = AssignNode.from_ast_assign(item)
-            node.to_go()
-
-        if isinstance(item, ast.AnnAssign):
-            node = AssignNode.from_ast_ann_assign(item)
-            node.to_go()

@@ -172,12 +172,54 @@ def ast_bool_op_to_go(bool_op: ast.BoolOp) -> str:
     return f"({left} {operator} {right})"
 
 
-def ast_if_to_go(if_cond: ast.If):
+def _process_ast_if(if_stmt: ast.If) -> tuple[str, str]:
+
     condition_mapper = {
         ast.Compare: ast_compare_to_go,
         ast.BoolOp: ast_bool_op_to_go
     }
 
-    condition = condition_mapper[type(if_cond.test)](if_cond.test)
+    if_condition = condition_mapper[type(if_stmt.test)](if_stmt.test)
 
-    return f"if ({trim_brackets(condition)}) {{}}"
+    if_body = ""
+
+    return trim_brackets(if_condition), if_body
+
+
+def _extract_orelses(if_stmt: ast.If) -> list[ast.If | ast.Expr]:
+    orelses = []
+    orelses.append(if_stmt)
+    if orelse := getattr(if_stmt, 'orelse', None):
+        orelses += _extract_orelses(orelse[0])
+
+    return orelses
+
+
+def _hanld_if_else(if_stmt: ast.If, has_else: bool = False):
+    if_cond, if_body = _process_ast_if(if_stmt)
+
+    result = "if else " if has_else else "if "
+    result += f"({trim_brackets(if_cond)}) {{\n{if_body}\n}}\n"
+
+    return result
+
+
+def ast_if_to_go(if_stmt: ast.If):
+    orelses = _extract_orelses(if_stmt)
+
+    if len(orelses) == 1:
+        return _hanld_if_else(if_stmt)
+
+    if_part, *elif_parts, else_part = orelses
+
+    result = _hanld_if_else(if_part)
+
+    for elif_part in elif_parts:
+        result += _hanld_if_else(elif_part, has_else=True)
+
+    result += f"else {{\n\n}}\n"
+
+    return result
+
+
+
